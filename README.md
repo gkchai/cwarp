@@ -6,10 +6,10 @@ C implementation of WARPLab for transport speedup
 Requirements
 ------------
 
-WARPLab v7.4 (MEX transport enabled)
-WARP v3 Hardware
-1GbE/10GbE Ethernet Switch
-10GbE NIC
+* WARPLab v7.4 (MEX transport enabled)
+* WARP v3 Hardware
+* 1GbE/10GbE Ethernet Switch
+* 10GbE NIC
 
 
 Instructions
