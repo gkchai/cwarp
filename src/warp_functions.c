@@ -159,4 +159,7 @@ void writeIQ(double complex* samples, int start_sample, int num_samples, int nod
 	strcat(base_ip_addr, str);
 
 	writeSamples(node_sock, writeIQ_buffer, 8962, (char*) base_ip_addr, node_port, num_samples, sample_I_buffer, sample_Q_buffer, (uint32) buffer_id, start_sample, num_pkts, max_samples, TRANSPORT_WARP_HW_v3);
+
+	free(sample_I_buffer);
+	free(sample_Q_buffer);
 }

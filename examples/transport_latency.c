@@ -1,14 +1,17 @@
 
 /* Benchmarking the transport latency of 
- parallel read/write functions */
+ parallel read/write functions 
+- Only reads/writes single buffer from/to each node 
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 
 #include "warp_functions.h"
 
-#define MAX_LOOP 1000
+#define MAX_LOOP 10010
 #define CLOCKTYPE CLOCK_MONOTONIC_RAW
 
 // calculate the time difference in milliseconds 
@@ -21,6 +24,42 @@ double diff(struct timespec end, struct timespec start){
 	}
 }
 
+// returns average measured time for the passed fucntion 
+double measureLatency(int numNodes, int num_samples, int* arr_node_sock, int* arr_node_id, int host_id, void (*func) (int, int, int*, int*,  int)){
+
+	int count;
+	double avgD, stdD, totD=0, totSqD=0;
+	double loopD[MAX_LOOP];
+	struct timespec tsi, tsf;
+
+    for (count = 0; count < MAX_LOOP; count++){
+    
+    	clock_gettime(CLOCKTYPE, &tsi);		
+
+    	func(numNodes, num_samples, arr_node_sock, arr_node_id, host_id);
+
+	    clock_gettime(CLOCKTYPE, &tsf);			
+
+	    loopD[count] = diff(tsf, tsi);
+	    if (count > 9){
+	    	totD = totD + loopD[count]; // we skip the measurements of the first 10 calls
+	    }	
+		if (count > 9){
+	    	totSqD = totSqD + pow(loopD[count],2); // we skip the measurements of the first 10 calls
+	    }
+	    // printf("delay node%d [%d] : %f\n", arr_node_id[0], count, loopLatency[count]);
+    }
+
+    avgD = totD/(MAX_LOOP - 10); 
+    stdD = sqrt((totSqD/(MAX_LOOP - 10)) - pow(avgD,2)); // std = avg(X^2) - (avg(X))^2
+
+	printf("delay values of %d numNodes: avg=%f std=%f\n", arr_node_id[0], avgD, stdD);
+
+    return avgD;
+}
+
+
+
 
 // parallel read
 void multi_read(int numNodes, int num_samples, int* arr_node_sock, int* arr_node_id, int host_id){
@@ -32,64 +71,39 @@ void multi_read(int numNodes, int num_samples, int* arr_node_sock, int* arr_node
 		#pragma omp for private(niter)	
 		for (niter = 0; niter < numNodes; niter++){
 
-			readIQ(samples, 0, num_samples, arr_node_sock[niter], arr_node_id[niter], 1, host_id);
+			readIQ(samples, 0, num_samples, arr_node_sock[niter], arr_node_id[niter], 1, host_id); // default: buffer id = RFA, sample offset = 0 
+			// readIQ(samples, 0, num_samples, arr_node_sock[niter], arr_node_id[niter], 2, host_id); // Read RFB after RFA
 		}
 	}	
+	free(samples);
 }
 
 // parallel write
 void multi_write(int numNodes, int num_samples, int* arr_node_sock, int* arr_node_id, int host_id){
 
-	double complex* samples = malloc(num_samples*sizeof(double complex)); 
+	double complex* samples = malloc(num_samples*sizeof(double complex)); // for now we dump zero samples 
 	#pragma omp parallel    
 	{
 		int niter;
 		#pragma omp for private(niter)	
 		for (niter = 0; niter < numNodes; niter++){
 			
-			writeIQ(samples, 0, num_samples, arr_node_sock[niter], arr_node_id[niter], 1, host_id);
+			writeIQ(samples, 0, num_samples, arr_node_sock[niter], arr_node_id[niter], 1, host_id); // default: buffer id = RFA, sample offset = 0 
+			// writeIQ(samples, 0, num_samples, arr_node_sock[niter], arr_node_id[niter], 2, host_id); // Read RFB after RFA
 		}
 	}
+
+	free(samples);
 }
-
-
-// returns average measured time for the passed fucntion 
-double measureLatency(int numNodes, int num_samples, int* arr_node_sock, int* arr_node_id, int host_id, void (*f) (int, int, int*, int*,  int)){
-
-	int count;
-	double avgLatency, totLatency=0;
-	double loopLatency[MAX_LOOP];
-	struct timespec tsi, tsf;
-
-    for (count = 0; count < MAX_LOOP; count++){
-    
-    	clock_gettime(CLOCKTYPE, &tsi);		
-
-    	f(numNodes, num_samples, arr_node_sock, arr_node_id, host_id);
-
-	    clock_gettime(CLOCKTYPE, &tsf);			
-
-	    loopLatency[count] = diff(tsf, tsi);
-	    if (count > 9){
-	    	totLatency = totLatency + loopLatency[count];
-	    }	
-	    // printf("delay node%d [%d] : %f\n", arr_node_id[0], count, loopLatency[count]);
-    }
-
-    avgLatency = totLatency/(MAX_LOOP - 10); 	
-
-    return avgLatency;
-}
-
 
 
 
 int main(){
 
-	int read_nodes[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 , 11, 12, 13, 14, 15};
+	int read_nodes[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
 	int write_nodes[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 , 11, 12, 13, 14, 15};
-	int num_samples = 32767;
-	int host_id = 210;
+	int num_samples = 32767; // use 16383 for 16K buffer
+	int host_id = 210; // 10.0.0.210 is the IP address of host
 	int numNodeRange = 16;
 
 	double readLatency[numNodeRange];
@@ -97,8 +111,8 @@ int main(){
 
 	int numNodes;
 	FILE *fpr, *fpw;
-	fpr = fopen("../traces/read_time.dat", "w"); 
-	fpw = fopen("../traces/write_time.dat", "w"); 
+	fpr = fopen("../traces/read_time_new.dat", "w"); 
+	fpw = fopen("../traces/write_time_new.dat", "w"); 
 
 
 	for (numNodes = 1; numNodes <= numNodeRange; numNodes++){
@@ -109,7 +123,7 @@ int main(){
 		nodes_initialize(arr_node_sock, numNodes);
 		printf("-------nodes intialiazed------------\n");
 
-		sendTrigger(); // send trigger for once in the beginning
+		sendTrigger(); // send trigger before reading buffers
 		
 		readLatency[numNodes] = measureLatency(numNodes, num_samples, arr_node_sock, read_nodes, host_id, multi_read);
 
@@ -131,10 +145,10 @@ int main(){
 		// first initialize the sockets 
 		nodes_initialize(arr_node_sock, numNodes);
 		printf("-------nodes intialiazed------------\n");
-
-		sendTrigger(); // send trigger for once in the beginning
 		
 		writeLatency[numNodes] = measureLatency(numNodes, num_samples, arr_node_sock, read_nodes, host_id, multi_write);
+
+		sendTrigger(); // send trigger after writing 
 
 		printf(" Write latency [Nodes=%d] = %2.2f \n", numNodes, writeLatency[numNodes]);
 
@@ -146,8 +160,6 @@ int main(){
 	} 
 
 	fclose(fpw);
-
-
 
 	return 0;
 }
