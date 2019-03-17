@@ -26,7 +26,6 @@ Contact Information
 
 Author: Krishna C. Garikipati  
 E-mail: <gkchai@eecs.umich.edu>  
-Homepage: <http://eecs.umich.edu/~gkchai>  
 
 
 
